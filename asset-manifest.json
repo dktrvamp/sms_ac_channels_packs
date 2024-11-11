@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/sms_ac_channels_packs/static/css/main.14ed9af9.css",
+    "main.js": "/sms_ac_channels_packs/static/js/main.350d5e51.js",
+    "static/js/453.1788c358.chunk.js": "/sms_ac_channels_packs/static/js/453.1788c358.chunk.js",
+    "index.html": "/sms_ac_channels_packs/index.html",
+    "main.14ed9af9.css.map": "/sms_ac_channels_packs/static/css/main.14ed9af9.css.map",
+    "main.350d5e51.js.map": "/sms_ac_channels_packs/static/js/main.350d5e51.js.map",
+    "453.1788c358.chunk.js.map": "/sms_ac_channels_packs/static/js/453.1788c358.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.14ed9af9.css",
+    "static/js/main.350d5e51.js"
+  ]
+}

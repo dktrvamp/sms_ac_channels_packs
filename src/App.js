@@ -1,111 +1,105 @@
-import logo from "./logo.svg";
 import "./App.css";
 import { useRef, useState, useEffect, useCallback } from "react";
-import sms from "./api/beta.sms.channels";
+import { getAllPackages } from "./utility/Magento.service";
+import ENV_CONFIG from "./utility/ENV.config";
+import { mapChannelToPacksBySearchQuery } from "./utility/ChannelMapping.utility";
+import DropdownSelect from "./components/DropdownSelect";
 function App() {
   const firstRender = useRef(true);
   const [error, setError] = useState();
-  const [data, setData] = useState();
-  const [searchTerm, setSearchTerm] = useState("al yawm");
+  const [activeEnvironmentState, setActiveEnvironmentState] = useState(
+    ENV_CONFIG.PRODUCTION
+  );
+  const currentEnvRef = useRef(activeEnvironmentState);
+  const screenDataRef = useRef();
+  const [searchTerm, setSearchTerm] = useState("espn");
   const [filteredItems, setFilteredItems] = useState();
 
   useEffect(() => {
-    const getChannelsFromSMS = async () => {
+    const getChannelsAndPackagesAndUpdateScreenData = async () => {
       try {
-        const allPackagesGraphQL = await fetch(
-          `https://b.slingcommerce.com/graphql?query=query packages($filter: PackageAttributeFilterInput) { packages(filter: $filter) { items { package { sku canonical_identifier priority name package_type line_of_business base_price plan_package_price item_guid plan_offer_price default_classification channels { call_sign name } addons { sku } excluded_packages { sku } } } } }&operationName=packages&variables={"filter":{"is_channel_required":{"eq":true}}}`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-            },
-          }
+        const ac_packages = await getAllPackages(
+          activeEnvironmentState.MAGENTO_HOST
         );
-        const packagesQueryResponse = await allPackagesGraphQL.json();
-        const ac_packages = packagesQueryResponse.data.packages.items.package;
-        const sms_channels = Object.keys(sms.channel_map).map(
-          (key) => sms.channel_map[key]
-        );
-        setData({ sms_channels, ac_packages });
+        const sms_channels = Object.keys(
+          activeEnvironmentState.SMS_CHANNELS.channel_map
+        ).map((key) => activeEnvironmentState.SMS_CHANNELS.channel_map[key]);
+        screenDataRef.current = { sms_channels, ac_packages };
+        return Promise.resolve();
       } catch (error) {
         setError(error);
       }
     };
 
-    if (!data?.ac_packages && !data?.sms_channels) {
-      getChannelsFromSMS();
-    }
-    if (firstRender.current && data?.ac_packages && data?.sms_channels && searchTerm) {
-      firstRender.current = false;
-      handleChange({target: {value: searchTerm}});
-    }
-  }, [data]);
-
-  const handleChange = useCallback(
-    (event) => {
-      const term = event?.target?.value;
-      if (!term) {
-        setFilteredItems([]);
-        setSearchTerm(term);
-        return;
+    const init = async () => {
+      const environmentChanged =
+        currentEnvRef.current.NAME !== activeEnvironmentState.NAME;
+      // Environment Changed
+      if (environmentChanged) {
+        currentEnvRef.current = activeEnvironmentState;
+        await getChannelsAndPackagesAndUpdateScreenData();
+        handleChannelSearchChange({ target: { value: searchTerm } });
+        // First time Render
+      } else if (firstRender.current) {
+        firstRender.current = false;
+        if (
+          !screenDataRef.current?.ac_packages &&
+          !screenDataRef.current?.sms_channels
+        ) {
+          await getChannelsAndPackagesAndUpdateScreenData();
+          // Only search if we have a default placeholder in the input field
+          searchTerm &&
+            handleChannelSearchChange({ target: { value: searchTerm } });
+        }
       }
-      setSearchTerm(term);
+    };
 
-      // Filter items based on the search term
-      const filtered = data.sms_channels.filter(
-        (item) =>
-          item && item?.channel_name.toLowerCase().includes(term.toLowerCase())
-      ).map(channel => {
-        const sub_pack_guids = channel?.sub_pack_guids;
-        const packages = sub_pack_guids.map(packGuid => {
-          const pack = data?.ac_packages?.find((pack) => pack?.item_guid === packGuid);
+    init();
+  }, [activeEnvironmentState]);
 
-          if (pack) {
-            const {item_guid, sku, name, package_type} = pack;
-            return {
-              item_guid, sku, name, package_type
-            }
-          }
-          return null;
-        }).filter(Boolean);
-        const packagesIncludingChannelButNotMatchSmsGuids = !packages?.length ? data?.ac_packages?.map(pack => {
-          const channelFoundInPack = pack?.channels?.find(i => i?.name?.toLowerCase()?.includes(channel?.channel_name?.toLowerCase()));
-          if (channelFoundInPack) {
-            const {item_guid, sku, name, package_type} = pack;
-            return {item_guid, sku, name, package_type};
-          }
-        }).filter(Boolean) : {};
-
-        return packages ?
-        {
-          channel: {
-            call_sign: channel?.call_sign,
-            name: channel?.channel_name,
-            guid: channel?.guid,
-            sub_pack_guids: channel?.sub_pack_guids?.join(', ')
-          },
-          packages,
-          other_packages: packagesIncludingChannelButNotMatchSmsGuids,
-        } : null;
-      }).filter(Boolean).splice(0, 10);
-      setFilteredItems(filtered);
+  const handleEnvironmentChange = useCallback(
+    (event) => {
+      const environment = event.target.value;
+      setActiveEnvironmentState(ENV_CONFIG[environment]);
     },
-    [data]
+    [activeEnvironmentState]
   );
+
+  const handleChannelSearchChange = useCallback((event) => {
+    const inputField = event?.target?.value;
+    if (!inputField) {
+      setFilteredItems([]);
+      setSearchTerm(inputField);
+      return;
+    }
+    setSearchTerm(inputField);
+    const channelToPacksData = mapChannelToPacksBySearchQuery({
+      channels: screenDataRef.current?.sms_channels,
+      packages: screenDataRef.current?.ac_packages,
+      inputField,
+    });
+    setFilteredItems(channelToPacksData);
+  }, []);
   return (
     <div className="App">
       <header className="App-header">
         <h1>SMS AC Channels </h1>
+        <DropdownSelect
+          items={Object.keys(ENV_CONFIG)}
+          defaultValue={activeEnvironmentState?.NAME}
+          selectionText={'Current Environment:'}
+          onChange={handleEnvironmentChange} />
+
       </header>
       <div className="Search-Container">
-        <h2>Results </h2>
+        <h2>Search for a Channel </h2>
         <input
           type="text"
           placeholder="Search..."
           value={searchTerm}
-          onChange={handleChange}
+          onChange={handleChannelSearchChange}
         />
+
         <div className="list-container">
           {filteredItems
             ? filteredItems?.map((item, index) => (
@@ -114,7 +108,10 @@ function App() {
                   <pre>{JSON.stringify(item?.channel, null, 2)}</pre>
                   <h2>AC Packages</h2>
                   <pre>{JSON.stringify(item?.packages, null, 2)}</pre>
-                  <h2>Channel Found in AC Packages but did not match SMS Pack Guids</h2>
+                  <h2>
+                    Channel Found in AC Packages but did not match SMS Pack
+                    Guids
+                  </h2>
                   <pre>{JSON.stringify(item?.other_packages, null, 2)}</pre>
                 </div>
               ))
